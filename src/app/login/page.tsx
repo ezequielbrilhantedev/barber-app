@@ -10,34 +10,64 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabaseClient';
 import { Chrome, Lock, Mail, Scissors } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 export default function LoginPage() {
+  const { login, loginWithGoogle, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
   // const { login, loginWithGoogle, loading } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // try {
-    //   await login(email, password);
-    //   toast({
-    //     title: "Login realizado com sucesso!",
-    //     description: "Bem-vindo de volta ao BarberApp"
-    //   });
-    //   navigate('/dashboard');
-    // } catch (error) {
-    //   toast({
-    //     title: "Erro no login",
-    //     description: "Verifique suas credenciais e tente novamente",
-    //     variant: "destructive"
-    //   });
-    // }
+    try {
+      await login(email, password);
+      toast('Login realizado com sucesso!', {
+        description: 'Bem-vindo de volta ao BarberApp',
+      });
+      router.push('/dashboard');
+    } catch (error) {
+      toast('Erro no login', {
+        description:
+          'Verifique suas credenciais e tente novamente',
+      });
+    }
   };
 
   const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    console.log('User after Google login:', user);
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('*')
+      .eq('auth_user_id', user?.id)
+      .single();
+
+    if (!profile) {
+      router.push('/register');
+      return;
+    } else {
+      router.push('/dashboard');
+    }
+
     // try {
     //   await loginWithGoogle();
     //   toast({
@@ -55,7 +85,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen w-full bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="flex min-h-screen">
         {/* Left side - Hero section (hidden on mobile) */}
         <div className="hidden lg:flex lg:w-1/2 bg-primary text-primary-foreground p-12 flex-col justify-center">
