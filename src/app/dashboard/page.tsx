@@ -2,12 +2,13 @@
 
 import BarberDashboard from '@/components/BarberDashboard';
 import ClientDashboard from '@/components/ClientDashboard';
-import { User } from '@/context/AuthContext';
+import { useAuth, User } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [userProfile, setUserProfile] =
     useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,10 +32,10 @@ export default function DashboardPage() {
         .single();
 
       if (!data || error) {
-        router.push('/register'); // ou tela de completar perfil
+        router.push('/register');
         return;
       }
-      setUserProfile(data);
+      setUserProfile({ ...data, type: data.role });
       setLoading(false);
     };
 
@@ -56,7 +57,11 @@ export default function DashboardPage() {
     );
   }
 
-  return userProfile.type === 'client' ? (
+  {
+    console.log('Dashboard userProfile:', userProfile.type);
+  }
+
+  return user?.type === 'customer' ? (
     <ClientDashboard user={userProfile} />
   ) : (
     <BarberDashboard user={userProfile} />

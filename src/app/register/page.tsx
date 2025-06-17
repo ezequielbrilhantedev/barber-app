@@ -8,52 +8,128 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Form, FormField } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   RadioGroup,
   RadioGroupItem,
 } from '@/components/ui/radio-group';
+import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/AuthContext';
+import { zodResolver } from '@hookform/resolvers/zod';
 // import { Textarea } from "@/components/ui/textarea";
-import { supabase } from '@/lib/supabaseClient';
 import { Label } from '@radix-ui/react-label';
 import {
   Chrome,
-  Link,
   Lock,
   Mail,
+  MapPin,
   Scissors,
   User,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
+import { z } from 'zod';
+
+const formSchema = z
+  .object({
+    name: z.string().min(2, {
+      message: 'O nome deve ter pelo menos 2 caracteres',
+    }),
+    email: z.string().email({
+      message: 'Por favor, insira um email válido',
+    }),
+    password: z.string().min(5, {
+      message: 'A senha deve ter pelo menos 5 caracteres',
+    }),
+    confirmPassword: z.string().min(5),
+    userType: z.enum(['customer', 'barber'], {
+      errorMap: () => ({
+        message: 'Selecione um tipo de usuário',
+      }),
+    }),
+    address: z.string().optional(),
+  })
+  .refine(
+    (data) => data.password === data.confirmPassword,
+    {
+      message: 'As senhas não coincidem',
+      path: ['confirmPassword'],
+    }
+  );
 
 export default function RegisterPage() {
-  const { register } = useAuth();
-  const [error, setError] = useState<string | null>(null);
+  const { loginWithGoogle, register } = useAuth();
   const [loading, setLoading] = useState(false);
 
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      userType: 'customer',
+      address: '',
+    },
+  });
+
+  const userType = form.watch('userType');
+
+  const handleRegister = async (
+    values: z.infer<typeof formSchema>
+  ) => {
+    console.log('Register values:', values);
+    try {
+      setLoading(true);
+      await register(
+        values.email,
+        values.password,
+        values.name,
+        values.userType,
+        values.address
+      );
+    } catch (error) {
+      console.log('Erro no registro:', error);
+      toast.error('Erro ao criar conta', {
+        style: {
+          backgroundColor: '#ef4444',
+          color: '#ffffff',
+        },
+        description:
+          'Verifique seus dados e tente novamente',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGoogleLogin = async () => {
-    const { error: signInError } =
-      await supabase.auth.signInWithOAuth({
-        provider: 'google',
+    try {
+      setLoading(true);
+      await loginWithGoogle();
+      toast('Conta criada com sucesso!', {
+        description: 'Bem-vindo ao BarberApp',
       });
-    if (signInError) {
-      setError(signInError.message);
-    } else {
       router.push('/dashboard');
+    } catch (error) {
+      console.log('Erro no login com Google:', error);
+      toast('Erro no login', {
+        description:
+          'Não foi possível fazer login com Google',
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="w-full min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="flex min-h-screen">
         {/* Left side - Hero section (hidden on mobile) */}
         <div className="hidden lg:flex lg:w-1/2 bg-primary text-primary-foreground p-12 flex-col justify-center">
@@ -131,167 +207,206 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              <form
-                onSubmit={handleSubmit}
-                className="space-y-5 lg:space-y-6"
-              >
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="name"
-                    className="text-base"
-                  >
-                    Nome completo
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                    <Input
-                      id="name"
-                      type="text"
-                      placeholder="Seu nome"
-                      // value={formData.name}
-                      // onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      className="pl-12 h-12 text-base"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="email"
-                    className="text-base"
-                  >
-                    Email
-                  </Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="seu@email.com"
-                      // value={formData.email}
-                      // onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="pl-12 h-12 text-base"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="password"
-                      className="text-base"
-                    >
-                      Senha
-                    </Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                      <Input
-                        id="password"
-                        type="password"
-                        placeholder="••••••••"
-                        // value={formData.password}
-                        // onChange={(e) => setFormData({...formData, password: e.target.value})}
-                        className="pl-12 h-12 text-base"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="confirmPassword"
-                      className="text-base"
-                    >
-                      Confirmar senha
-                    </Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                      <Input
-                        id="confirmPassword"
-                        type="password"
-                        placeholder="••••••••"
-                        // value={formData.confirmPassword}
-                        // onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                        className="pl-12 h-12 text-base"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <Label className="text-base">
-                    Tipo de usuário
-                  </Label>
-                  <RadioGroup
-                    // value={formData.userType}
-                    // onValueChange={(value: 'client' | 'barber') => setFormData({...formData, userType: value})}
-                    className="flex flex-col lg:flex-row lg:space-x-6 space-y-2 lg:space-y-0"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="client"
-                        id="client"
-                      />
-                      <Label
-                        htmlFor="client"
-                        className="text-base"
-                      >
-                        Cliente
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="barber"
-                        id="barber"
-                      />
-                      <Label
-                        htmlFor="barber"
-                        className="text-base"
-                      >
-                        Barbeiro
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
-                {/* {formData.userType === 'barber' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="address" className="text-base">Endereço da barbearia</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-                      <Textarea
-                        id="address"
-                        placeholder="Rua, número, bairro, cidade, CEP"
-                        value={formData.address}
-                        onChange={(e) => setFormData({...formData, address: e.target.value})}
-                        className="pl-12 resize-none min-h-[80px] text-base"
-                        rows={3}
-                        required
-                      />
-                    </div>
-                  </div>
-                )} */}
-
-                <Button
-                  type="submit"
-                  className="w-full h-12 text-base"
-                  disabled={loading}
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(
+                    handleRegister
+                  )}
+                  className="space-y-5 lg:space-y-6"
                 >
-                  {loading
-                    ? 'Criando conta...'
-                    : 'Criar conta'}
-                </Button>
-              </form>
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="name"
+                      className="text-base"
+                    >
+                      Nome completo
+                    </Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                      <FormField
+                        control={form.control}
+                        name="name"
+                        render={({ field }) => (
+                          <Input
+                            id="name"
+                            type="text"
+                            placeholder="Seu nome"
+                            {...field}
+                            className="pl-12 h-12 text-base"
+                            required
+                          />
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="email"
+                      className="text-base"
+                    >
+                      Email
+                    </Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <Input
+                            id="email"
+                            type="email"
+                            placeholder="seu@email.com"
+                            className="pl-12 h-12 text-base"
+                            required
+                            {...field}
+                          />
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="password"
+                        className="text-base"
+                      >
+                        Senha
+                      </Label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                        <FormField
+                          control={form.control}
+                          name="password"
+                          render={({ field }) => (
+                            <Input
+                              id="password"
+                              type="password"
+                              placeholder="••••••••"
+                              className="pl-12 h-12 text-base"
+                              required
+                              {...field}
+                            />
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="confirmPassword"
+                        className="text-base"
+                      >
+                        Confirmar senha
+                      </Label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                        <FormField
+                          control={form.control}
+                          name="confirmPassword"
+                          render={({ field }) => (
+                            <Input
+                              id="confirmPassword"
+                              type="password"
+                              placeholder="••••••••"
+                              className="pl-12 h-12 text-base"
+                              required
+                              {...field}
+                            />
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-base">
+                      Tipo de usuário
+                    </Label>
+
+                    <FormField
+                      control={form.control}
+                      name="userType"
+                      render={({ field }) => (
+                        <RadioGroup
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          className="flex flex-col lg:flex-row lg:space-x-6 space-y-2 lg:space-y-0"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem
+                              value="customer"
+                              id="customer"
+                            />
+                            <Label
+                              htmlFor="customer"
+                              className="text-base"
+                            >
+                              Cliente
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem
+                              value="barber"
+                              id="barber"
+                            />
+                            <Label
+                              htmlFor="barber"
+                              className="text-base"
+                            >
+                              Barbeiro
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      )}
+                    />
+                  </div>
+
+                  {userType === 'barber' && (
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="address"
+                        className="text-base"
+                      >
+                        Endereço da barbearia
+                      </Label>
+                      <div className="relative">
+                        <MapPin className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                        <FormField
+                          control={form.control}
+                          name="address"
+                          render={({ field }) => (
+                            <Textarea
+                              id="address"
+                              placeholder="Rua, número, bairro, cidade, CEP"
+                              className="pl-12 resize-none min-h-[80px] text-base"
+                              rows={3}
+                              {...field}
+                            />
+                          )}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <Button
+                    type="submit"
+                    className="w-full h-12 text-base cursor-pointer"
+                    disabled={loading}
+                  >
+                    {loading
+                      ? 'Criando conta...'
+                      : 'Criar conta'}
+                  </Button>
+                </form>
+              </Form>
 
               <div className="text-center text-sm lg:text-base">
                 <span className="text-muted-foreground">
                   Já tem uma conta?{' '}
                 </span>
                 <Link
-                  to="/login"
+                  href="/login"
                   className="text-primary hover:underline font-medium"
                 >
                   Entre aqui
