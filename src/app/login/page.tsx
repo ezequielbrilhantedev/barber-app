@@ -8,80 +8,88 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Form, FormField } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/lib/supabaseClient';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Chrome, Lock, Mail, Scissors } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+const formSchema = z.object({
+  email: z.string().email({
+    message: 'Por favor, insira um email válido',
+  }),
+  password: z.string().min(5, {
+    message: 'A senha deve ter pelo menos 5 caracteres',
+  }),
+});
 
 export default function LoginPage() {
-  const { login, loginWithGoogle, loading } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const { login, loginWithGoogle } = useAuth();
   const router = useRouter();
-  // const { login, loginWithGoogle, loading } = useAuth();
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+  });
+
+  async function handleLogin(
+    values: z.infer<typeof formSchema>
+  ) {
+    console.log('Login values:', values);
     try {
-      await login(email, password);
+      setLoading(true);
+      await login(values.email, values.password);
       toast('Login realizado com sucesso!', {
         description: 'Bem-vindo de volta ao BarberApp',
+        style: {
+          backgroundColor: '#22c55e',
+          color: '#ffffff',
+        },
       });
       router.push('/dashboard');
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
-      toast('Erro no login', {
+      toast.error('Erro no login', {
+        style: {
+          backgroundColor: '#ef4444',
+          color: '#ffffff',
+        },
         description:
           'Verifique suas credenciais e tente novamente',
       });
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
   const handleGoogleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/dashboard`,
-      },
-    });
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    console.log('User after Google login:', user);
-
-    const { data: profile } = await supabase
-      .from('users')
-      .select('*')
-      .eq('auth_user_id', user?.id)
-      .single();
-
-    if (!profile) {
-      router.push('/register');
-      return;
-    } else {
+    try {
+      setLoading(true);
+      await loginWithGoogle();
+      toast('Login realizado com sucesso!', {
+        description: 'Bem-vindo ao BarberApp',
+      });
       router.push('/dashboard');
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (error) {
+      toast('Erro no login', {
+        description:
+          'Não foi possível fazer login com Google',
+      });
+    } finally {
+      setLoading(false);
     }
-
-    // try {
-    //   await loginWithGoogle();
-    //   toast({
-    //     title: "Login realizado com sucesso!",
-    //     description: "Bem-vindo ao BarberApp"
-    //   });
-    //   navigate('/dashboard');
-    // } catch (error) {
-    //   toast({
-    //     title: "Erro no login",
-    //     description: "Não foi possível fazer login com Google",
-    //     variant: "destructive"
-    //   });
-    // }
   };
 
   return (
@@ -150,63 +158,71 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <form
-                onSubmit={handleSubmit}
-                className="space-y-5 lg:space-y-6"
-              >
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="email"
-                    className="text-base"
-                  >
-                    Email
-                  </Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="seu@email.com"
-                      value={email}
-                      onChange={(e) =>
-                        setEmail(e.target.value)
-                      }
-                      className="pl-12 h-12 text-base"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="password"
-                    className="text-base"
-                  >
-                    Senha
-                  </Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) =>
-                        setPassword(e.target.value)
-                      }
-                      className="pl-12 h-12 text-base"
-                      required
-                    />
-                  </div>
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full h-12 text-base"
-                  // disabled={loading}
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(handleLogin)}
+                  className="space-y-5 lg:space-y-6"
                 >
-                  {/* {loading ? 'Entrando...' : 'Entrar'} */}
-                  Entrar
-                </Button>
-              </form>
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="email"
+                      className="text-base"
+                    >
+                      Email
+                    </Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <Input
+                            id="email"
+                            type="email"
+                            placeholder="seu@email.com"
+                            className="pl-12 h-12 text-base"
+                            required
+                            {...field}
+                          />
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="password"
+                      className="text-base"
+                    >
+                      Senha
+                    </Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                      <FormField
+                        control={form.control}
+                        name="password"
+                        render={({ field }) => (
+                          <Input
+                            id="password"
+                            type="password"
+                            placeholder="••••••••"
+                            className="pl-12 h-12 text-base"
+                            required
+                            {...field}
+                          />
+                        )}
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full h-12 text-base"
+                    disabled={loading}
+                  >
+                    {loading ? 'Entrando...' : 'Entrar'}
+                  </Button>
+                </form>
+              </Form>
 
               <div className="text-center text-sm lg:text-base">
                 <span className="text-muted-foreground">

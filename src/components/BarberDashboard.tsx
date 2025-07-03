@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { User } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabaseClient';
 import {
   Calendar,
   Clock,
@@ -370,6 +371,15 @@ const BarberDashboard = ({ user }: { user: User }) => {
           </div>
         </CardContent>
       </Card>
+      <Button
+        onClick={() => {
+          supabase.auth.signOut();
+          localStorage.removeItem('user');
+          router.push('/login');
+        }}
+      >
+        Sair
+      </Button>
     </div>
   );
 };

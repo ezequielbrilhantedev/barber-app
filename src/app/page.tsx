@@ -41,7 +41,7 @@ export default function Home() {
             <Button
               size="lg"
               onClick={() => router.push('/login')}
-              className="px-8 py-3 md:px-10 md:py-4 text-base md:text-lg"
+              className="px-8 py-3 md:px-10 md:py-4 text-base md:text-lg cursor-pointer"
             >
               Entrar
             </Button>
@@ -49,7 +49,7 @@ export default function Home() {
               size="lg"
               variant="outline"
               onClick={() => router.push('/register')}
-              className="px-8 py-3 md:px-10 md:py-4 text-base md:text-lg"
+              className="px-8 py-3 md:px-10 md:py-4 text-base md:text-lg cursor-pointer"
             >
               Cadastrar
             </Button>

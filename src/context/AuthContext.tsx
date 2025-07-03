@@ -5,13 +5,14 @@ import React, {
   useEffect,
   useState,
 } from 'react';
+import { toast } from 'sonner';
 
 export interface User {
   id: string;
   auth_user_id: string;
   name: string;
   email: string;
-  type: 'client' | 'barber';
+  type: 'customer' | 'barber';
   barbershop?: {
     id: string;
     name: string;
@@ -28,7 +29,7 @@ interface AuthContextType {
     email: string,
     password: string,
     name: string,
-    type: 'client' | 'barber',
+    type: 'customer' | 'barber',
     address?: string
   ) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
@@ -104,7 +105,7 @@ export const AuthProvider = ({
     email: string,
     password: string,
     name: string,
-    type: 'client' | 'barber',
+    type: 'customer' | 'barber',
     address?: string
   ) => {
     setLoading(true);
@@ -112,15 +113,41 @@ export const AuthProvider = ({
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            full_name: name,
+            role: type,
+            address: address || null,
+          },
+        },
       });
       if (error) throw new Error(error.message);
+
+      if (!data.session) {
+        toast('Verifique seu e-mail!', {
+          description:
+            'Enviamos um link de confirmação para você ativar sua conta.',
+          style: {
+            backgroundColor: '#FFA500',
+            color: '#ffffff',
+          },
+        });
+        return;
+      }
+
+      const authUserId = data.user?.id;
+      if (!authUserId) {
+        throw new Error(
+          'Usuário não autenticado. Verifique seu email para confirmação.'
+        );
+      }
 
       const { data: profile, error: profileError } =
         await supabase
           .from('users')
           .insert([
             {
-              auth_user_id: data.user?.id,
+              auth_user_id: authUserId,
               name,
               email,
               role: type,
@@ -148,12 +175,68 @@ export const AuthProvider = ({
   const loginWithGoogle = async () => {
     setLoading(true);
     try {
-      await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`,
-        },
-      });
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { data, error } =
+        await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: `${window.location.origin}/dashboard`,
+          },
+        });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error('Usuário não encontrado');
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { data: profile, error: profileError } =
+        await supabase
+          .from('users')
+          .select('*')
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+
+      if (!profile) {
+        const { data: newProfile, error: insertError } =
+          await supabase
+            .from('users')
+            .insert([
+              {
+                auth_user_id: user.id,
+                name:
+                  user.user_metadata.full_name ||
+                  user.email,
+                role: 'customer',
+                email: user.email,
+              },
+            ])
+            .select()
+            .single();
+
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
+
+        setUser(newProfile);
+        localStorage.setItem(
+          'user',
+          JSON.stringify(newProfile)
+        );
+      } else {
+        setUser(profile);
+        localStorage.setItem(
+          'user',
+          JSON.stringify(profile)
+        );
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       throw new Error(
