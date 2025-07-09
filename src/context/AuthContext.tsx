@@ -1,4 +1,8 @@
 import { supabase } from '@/lib/supabaseClient';
+import {
+  checkUserProfile,
+  createUserProfile,
+} from '@/lib/userUtils';
 import React, {
   createContext,
   useContext,
@@ -65,37 +69,141 @@ export const AuthProvider = ({
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
+
+    // Listen for auth state changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          console.log(
+            'AuthContext: SIGNED_IN event, user:',
+            session.user.id
+          );
+
+          // Check if user profile exists
+          let profile = await checkUserProfile(
+            session.user.id
+          );
+
+          if (!profile) {
+            console.log(
+              'AuthContext: Perfil não encontrado, criando para Google OAuth...'
+            );
+            // Tentar criar perfil para usuários do Google OAuth
+            profile = await createUserProfile(
+              session.user.id,
+              session.user.user_metadata?.full_name ||
+                session.user.email?.split('@')[0] ||
+                'Usuário',
+              session.user.email || '',
+              'customer'
+            );
+          }
+
+          if (profile) {
+            console.log(
+              'AuthContext: Definindo usuário no contexto:',
+              profile
+            );
+            setUser(profile);
+            localStorage.setItem(
+              'user',
+              JSON.stringify(profile)
+            );
+          } else {
+            console.error(
+              'AuthContext: Não foi possível obter ou criar perfil'
+            );
+          }
+        } else if (event === 'SIGNED_OUT') {
+          console.log('AuthContext: SIGNED_OUT event');
+          setUser(null);
+          localStorage.removeItem('user');
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
     setLoading(true);
     try {
+      console.log('Tentando login com:', { email });
+
+      // 1. Primeiro fazer login no Supabase Auth
       const { data, error } =
         await supabase.auth.signInWithPassword({
           email,
           password,
         });
+
       if (error) {
+        console.error('Erro de autenticação:', error);
         throw new Error(error.message);
       }
 
+      if (!data.user) {
+        throw new Error('Usuário não encontrado');
+      }
+
+      console.log(
+        'Login no auth bem-sucedido, buscando perfil...'
+      );
+
+      // 2. Buscar perfil do usuário usando o ID do auth
       const { data: profile, error: profileError } =
         await supabase
           .from('users')
           .select('*')
-          .eq('auth_user_id', data.user?.id)
-          .single();
+          .eq('id', data.user.id) // Usar 'id' diretamente, não 'auth_user_id'
+          .maybeSingle();
 
-      if (!profile || profileError)
-        throw new Error('Perfil não encontrado');
+      if (profileError) {
+        console.error(
+          'Erro ao buscar perfil:',
+          profileError
+        );
+        throw new Error('Erro ao buscar perfil do usuário');
+      }
 
-      setUser(profile);
-      localStorage.setItem('user', JSON.stringify(profile));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      throw new Error(
-        error.message || 'Erro ao fazer login'
+      if (!profile) {
+        console.error(
+          'Perfil não encontrado na tabela users'
+        );
+        throw new Error(
+          'Perfil não encontrado. Tente fazer um novo cadastro.'
+        );
+      }
+
+      console.log('Perfil encontrado:', profile);
+
+      // 3. Converter role para type para consistência com a interface
+      const userProfile = {
+        ...profile,
+        type: profile.role,
+        auth_user_id: profile.id, // Manter compatibilidade
+      };
+
+      setUser(userProfile);
+      localStorage.setItem(
+        'user',
+        JSON.stringify(userProfile)
       );
+
+      console.log('Login concluído com sucesso');
+      console.log(
+        'Estado do usuário definido:',
+        userProfile
+      );
+    } catch (error: unknown) {
+      console.error('Erro completo no login:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao fazer login';
+      throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -110,6 +218,13 @@ export const AuthProvider = ({
   ) => {
     setLoading(true);
     try {
+      console.log('Tentando registrar usuário:', {
+        name,
+        email,
+        type,
+      });
+
+      // 1. Criar usuário no Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -121,8 +236,22 @@ export const AuthProvider = ({
           },
         },
       });
-      if (error) throw new Error(error.message);
 
+      if (error) {
+        console.error(
+          'Erro ao criar usuário no auth:',
+          error
+        );
+        throw new Error(error.message);
+      }
+
+      if (!data.user) {
+        throw new Error('Falha ao criar usuário');
+      }
+
+      console.log('Usuário criado no auth:', data.user.id);
+
+      // 2. Verificar se precisa de confirmação de email
       if (!data.session) {
         toast('Verifique seu e-mail!', {
           description:
@@ -135,19 +264,13 @@ export const AuthProvider = ({
         return;
       }
 
-      const authUserId = data.user?.id;
-      if (!authUserId) {
-        throw new Error(
-          'Usuário não autenticado. Verifique seu email para confirmação.'
-        );
-      }
-
+      // 3. Criar perfil na tabela users usando o ID do auth como chave primária
       const { data: profile, error: profileError } =
         await supabase
           .from('users')
           .insert([
             {
-              auth_user_id: authUserId,
+              id: data.user.id, // Usar o ID do auth como chave primária
               name,
               email,
               role: type,
@@ -157,16 +280,43 @@ export const AuthProvider = ({
           .select()
           .single();
 
-      if (!profile || profileError)
-        throw new Error('Erro ao criar perfil');
+      if (profileError) {
+        console.error(
+          'Erro ao criar perfil:',
+          profileError
+        );
+        // Se falhar, tentar deletar o usuário do auth para manter consistência
+        await supabase.auth.signOut();
+        throw new Error('Erro ao criar perfil do usuário');
+      }
 
-      setUser(profile);
-      localStorage.setItem('user', JSON.stringify(profile));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      throw new Error(
-        error.message || 'Erro ao criar conta'
+      if (!profile) {
+        throw new Error('Erro ao criar perfil');
+      }
+
+      console.log('Perfil criado com sucesso:', profile);
+
+      // 4. Configurar usuário no estado
+      const userProfile = {
+        ...profile,
+        type: profile.role,
+        auth_user_id: profile.id, // Manter compatibilidade
+      };
+
+      setUser(userProfile);
+      localStorage.setItem(
+        'user',
+        JSON.stringify(userProfile)
       );
+
+      console.log('Registro concluído com sucesso');
+    } catch (error: unknown) {
+      console.error('Erro no registro:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao criar conta';
+      throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -175,73 +325,27 @@ export const AuthProvider = ({
   const loginWithGoogle = async () => {
     setLoading(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { data, error } =
-        await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth(
+        {
           provider: 'google',
           options: {
             redirectTo: `${window.location.origin}/dashboard`,
           },
-        });
+        }
+      );
 
       if (error) {
         throw new Error(error.message);
       }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        throw new Error('Usuário não encontrado');
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { data: profile, error: profileError } =
-        await supabase
-          .from('users')
-          .select('*')
-          .eq('auth_user_id', user.id)
-          .maybeSingle();
-
-      if (!profile) {
-        const { data: newProfile, error: insertError } =
-          await supabase
-            .from('users')
-            .insert([
-              {
-                auth_user_id: user.id,
-                name:
-                  user.user_metadata.full_name ||
-                  user.email,
-                role: 'customer',
-                email: user.email,
-              },
-            ])
-            .select()
-            .single();
-
-        if (insertError) {
-          throw new Error(insertError.message);
-        }
-
-        setUser(newProfile);
-        localStorage.setItem(
-          'user',
-          JSON.stringify(newProfile)
-        );
-      } else {
-        setUser(profile);
-        localStorage.setItem(
-          'user',
-          JSON.stringify(profile)
-        );
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      throw new Error(
-        error.message || 'Erro ao fazer login com Google'
-      );
+      // O redirecionamento e criação de perfil será feito pelo onAuthStateChange
+      console.log('Google OAuth iniciado com sucesso');
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao fazer login com Google';
+      throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }

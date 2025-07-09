@@ -28,7 +28,6 @@ import {
   User,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -65,8 +64,6 @@ export default function RegisterPage() {
   const { loginWithGoogle, register } = useAuth();
   const [loading, setLoading] = useState(false);
 
-  const router = useRouter();
-
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -94,6 +91,20 @@ export default function RegisterPage() {
         values.userType,
         values.address
       );
+
+      // Se chegou até aqui, o registro foi bem-sucedido
+      toast.success('Conta criada com sucesso!', {
+        description: 'Bem-vindo ao BarberApp',
+        style: {
+          backgroundColor: '#22c55e',
+          color: '#ffffff',
+        },
+      });
+
+      // Redirecionar para o dashboard
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1000);
     } catch (error) {
       console.log('Erro no registro:', error);
       toast.error('Erro ao criar conta', {
@@ -113,15 +124,16 @@ export default function RegisterPage() {
     try {
       setLoading(true);
       await loginWithGoogle();
-      toast('Conta criada com sucesso!', {
-        description: 'Bem-vindo ao BarberApp',
-      });
-      router.push('/dashboard');
+      // O redirecionamento será feito pela página de callback
     } catch (error) {
       console.log('Erro no login com Google:', error);
-      toast('Erro no login', {
+      toast.error('Erro no login', {
         description:
           'Não foi possível fazer login com Google',
+        style: {
+          backgroundColor: '#ef4444',
+          color: '#ffffff',
+        },
       });
     } finally {
       setLoading(false);

@@ -16,7 +16,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Chrome, Lock, Mail, Scissors } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -31,9 +31,17 @@ const formSchema = z.object({
 });
 
 export default function LoginPage() {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, user } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (user) {
+      console.log('Usuário já logado, redirecionando...');
+      router.push('/dashboard');
+    }
+  }, [user, router]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -49,7 +57,10 @@ export default function LoginPage() {
     console.log('Login values:', values);
     try {
       setLoading(true);
+      console.log('Iniciando processo de login...');
       await login(values.email, values.password);
+      console.log('Login function retornou sucesso');
+
       toast('Login realizado com sucesso!', {
         description: 'Bem-vindo de volta ao BarberApp',
         style: {
@@ -57,9 +68,11 @@ export default function LoginPage() {
           color: '#ffffff',
         },
       });
+
+      console.log('Redirecionando para dashboard...');
       router.push('/dashboard');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
+      console.error('Erro no handleLogin:', error);
       toast.error('Erro no login', {
         style: {
           backgroundColor: '#ef4444',
@@ -77,15 +90,16 @@ export default function LoginPage() {
     try {
       setLoading(true);
       await loginWithGoogle();
-      toast('Login realizado com sucesso!', {
-        description: 'Bem-vindo ao BarberApp',
-      });
-      router.push('/dashboard');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // O redirecionamento será feito automaticamente após o OAuth
     } catch (error) {
-      toast('Erro no login', {
+      console.error('Erro no Google login:', error);
+      toast.error('Erro no login', {
         description:
           'Não foi possível fazer login com Google',
+        style: {
+          backgroundColor: '#ef4444',
+          color: '#ffffff',
+        },
       });
     } finally {
       setLoading(false);
