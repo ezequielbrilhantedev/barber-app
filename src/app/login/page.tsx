@@ -13,7 +13,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Chrome, Lock, Mail, Scissors } from 'lucide-react';
+import {
+  Chrome,
+  LoaderCircleIcon,
+  Lock,
+  Mail,
+  Scissors,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -87,10 +93,9 @@ export default function LoginPage() {
   }
 
   const handleGoogleLogin = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       await loginWithGoogle();
-      // O redirecionamento será feito automaticamente após o OAuth
     } catch (error) {
       console.error('Erro no Google login:', error);
       toast.error('Erro no login', {
@@ -155,10 +160,16 @@ export default function LoginPage() {
                 variant="outline"
                 className="w-full h-12 text-base"
                 onClick={handleGoogleLogin}
-                // disabled={loading}
+                disabled={loading}
               >
-                <Chrome className="h-5 w-5 mr-3" />
-                Entrar com Google
+                {loading ? (
+                  <LoaderCircleIcon className="h-5 w-5 animate-spin" />
+                ) : (
+                  <>
+                    <Chrome className="h-5 w-5 mr-3" />
+                    Entrar com Google
+                  </>
+                )}
               </Button>
 
               <div className="relative">

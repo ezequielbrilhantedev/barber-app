@@ -75,45 +75,68 @@ export const AuthProvider = ({
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log(
+          'AuthContext: Auth state change event:',
+          event
+        );
+
         if (event === 'SIGNED_IN' && session?.user) {
           console.log(
             'AuthContext: SIGNED_IN event, user:',
             session.user.id
           );
-
-          // Check if user profile exists
-          let profile = await checkUserProfile(
-            session.user.id
+          console.log(
+            'AuthContext: User metadata:',
+            session.user.user_metadata
           );
 
-          if (!profile) {
-            console.log(
-              'AuthContext: Perfil não encontrado, criando para Google OAuth...'
+          try {
+            // Check if user profile exists
+            let profile = await checkUserProfile(
+              session.user.id
             );
-            // Tentar criar perfil para usuários do Google OAuth
-            profile = await createUserProfile(
-              session.user.id,
-              session.user.user_metadata?.full_name ||
-                session.user.email?.split('@')[0] ||
-                'Usuário',
-              session.user.email || '',
-              'customer'
-            );
-          }
 
-          if (profile) {
-            console.log(
-              'AuthContext: Definindo usuário no contexto:',
-              profile
-            );
-            setUser(profile);
-            localStorage.setItem(
-              'user',
-              JSON.stringify(profile)
-            );
-          } else {
+            if (!profile) {
+              console.log(
+                'AuthContext: Perfil não encontrado, criando para usuário...'
+              );
+
+              // Extract name from metadata or email
+              const userName =
+                session.user.user_metadata?.full_name ||
+                session.user.user_metadata?.name ||
+                session.user.email?.split('@')[0] ||
+                'Usuário';
+
+              // Create profile for new users (especially Google OAuth users)
+              profile = await createUserProfile(
+                session.user.id,
+                userName,
+                session.user.email || '',
+                'customer' // Default to customer for Google OAuth users
+              );
+            }
+
+            if (profile) {
+              console.log(
+                'AuthContext: Definindo usuário no contexto:',
+                profile
+              );
+              setUser(profile);
+              localStorage.setItem(
+                'user',
+                JSON.stringify(profile)
+              );
+            } else {
+              console.error(
+                'AuthContext: Não foi possível obter ou criar perfil'
+              );
+              // Don't redirect to register here, let the user try again
+            }
+          } catch (error) {
             console.error(
-              'AuthContext: Não foi possível obter ou criar perfil'
+              'AuthContext: Erro ao processar usuário:',
+              error
             );
           }
         } else if (event === 'SIGNED_OUT') {
@@ -132,7 +155,6 @@ export const AuthProvider = ({
     try {
       console.log('Tentando login com:', { email });
 
-      // 1. Primeiro fazer login no Supabase Auth
       const { data, error } =
         await supabase.auth.signInWithPassword({
           email,
@@ -152,12 +174,11 @@ export const AuthProvider = ({
         'Login no auth bem-sucedido, buscando perfil...'
       );
 
-      // 2. Buscar perfil do usuário usando o ID do auth
       const { data: profile, error: profileError } =
         await supabase
           .from('users')
           .select('*')
-          .eq('id', data.user.id) // Usar 'id' diretamente, não 'auth_user_id'
+          .eq('id', data.user.id)
           .maybeSingle();
 
       if (profileError) {
@@ -179,11 +200,10 @@ export const AuthProvider = ({
 
       console.log('Perfil encontrado:', profile);
 
-      // 3. Converter role para type para consistência com a interface
       const userProfile = {
         ...profile,
         type: profile.role,
-        auth_user_id: profile.id, // Manter compatibilidade
+        auth_user_id: profile.id,
       };
 
       setUser(userProfile);
@@ -224,7 +244,6 @@ export const AuthProvider = ({
         type,
       });
 
-      // 1. Criar usuário no Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -251,7 +270,6 @@ export const AuthProvider = ({
 
       console.log('Usuário criado no auth:', data.user.id);
 
-      // 2. Verificar se precisa de confirmação de email
       if (!data.session) {
         toast('Verifique seu e-mail!', {
           description:
@@ -264,13 +282,12 @@ export const AuthProvider = ({
         return;
       }
 
-      // 3. Criar perfil na tabela users usando o ID do auth como chave primária
       const { data: profile, error: profileError } =
         await supabase
           .from('users')
           .insert([
             {
-              id: data.user.id, // Usar o ID do auth como chave primária
+              id: data.user.id,
               name,
               email,
               role: type,
@@ -296,11 +313,10 @@ export const AuthProvider = ({
 
       console.log('Perfil criado com sucesso:', profile);
 
-      // 4. Configurar usuário no estado
       const userProfile = {
         ...profile,
         type: profile.role,
-        auth_user_id: profile.id, // Manter compatibilidade
+        auth_user_id: profile.id,
       };
 
       setUser(userProfile);
@@ -325,6 +341,8 @@ export const AuthProvider = ({
   const loginWithGoogle = async () => {
     setLoading(true);
     try {
+      console.log('Iniciando login com Google...');
+
       const { error } = await supabase.auth.signInWithOAuth(
         {
           provider: 'google',
@@ -335,12 +353,14 @@ export const AuthProvider = ({
       );
 
       if (error) {
+        console.error('Erro no Google OAuth:', error);
         throw new Error(error.message);
       }
 
       // O redirecionamento e criação de perfil será feito pelo onAuthStateChange
       console.log('Google OAuth iniciado com sucesso');
     } catch (error: unknown) {
+      console.error('Erro no loginWithGoogle:', error);
       const errorMessage =
         error instanceof Error
           ? error.message
